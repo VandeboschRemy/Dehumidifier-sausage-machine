@@ -22,6 +22,12 @@
    const int XP=8,XM=A2,YP=A3,YM=9; //240x400 ID=0x7793
    const int TS_LEFT=910,TS_RT=134,TS_TOP=55,TS_BOT=935;
 
+   // Variables
+   String state = "overview"; // define state of the view, options: overview, settingsview, graphview
+   int humidSet = 70; // Set default to 70
+   int humidSeti = 70;
+   boolean editingSetting = false;
+
 //PORTRAIT  CALIBRATION     240 x 400
 //x = map(p.x, LEFT=910, RT=134, 0, 240)
 //y = map(p.y, TOP=55, BOT=935, 0, 400)
@@ -48,6 +54,7 @@
    #define TEXT_COLOR  0xFFFF
    #define RAINDROP    0x7BCF
    #define LEATHER     0x9346 
+   #define GREENBLUE   0x17b6
    
    #define DEG2RAD 0.0174532925 
    #define MINPRESSURE 200
@@ -57,6 +64,7 @@
    #define NUMPADSPACE 16
 
 void setup() {
+  
    pinMode(LED_BUILTIN, OUTPUT);
    
    uint16_t ID;
@@ -67,56 +75,9 @@ void setup() {
    tft.reset();
    tft.begin(ID);
    tft.setRotation(3);
+   tft.cp437(true);
 
-   // draw basic layout
-   tft.fillScreen(GREY);
-   tft.drawFastVLine(200,0, 240, WHITE); // seperation line between the info and control section
-   
-   // draw buttons for control screen
-   // 40x40 px buttons in a 3x4 grid, 16px to the edge and spacing
-   tft.fillRoundRect(216,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //1
-   tft.fillRoundRect(216,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //4
-   tft.fillRoundRect(216,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //7
-   tft.fillRoundRect(216,184,NUMPADSIZE,NUMPADSIZE,10,GREEN); //set
-   tft.fillRoundRect(272,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //2
-   tft.fillRoundRect(272,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //5
-   tft.fillRoundRect(272,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //8
-   tft.fillRoundRect(272,184,NUMPADSIZE,NUMPADSIZE,10,WHITE); //0
-   tft.fillRoundRect(328,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //3
-   tft.fillRoundRect(328,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //6
-   tft.fillRoundRect(328,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //9
-   tft.fillRoundRect(328,184,NUMPADSIZE,NUMPADSIZE,10,RED); //backspace
-   tft.drawChar(226,20,49,BLACK,0,4); //1
-   tft.drawChar(226,76,52,BLACK,0,4); //4
-   tft.drawChar(226,132,55,BLACK,0,4); //7
-   tft.drawChar(226,188,83,BLACK,0,4); //set
-   tft.drawChar(282,20,50,BLACK,0,4); //2
-   tft.drawChar(282,76,53,BLACK,0,4); //5
-   tft.drawChar(282,132,56,BLACK,0,4); //8
-   tft.drawChar(282,188,48,BLACK,0,4); //0
-   tft.drawChar(338,20,51,BLACK,0,4); //3
-   tft.drawChar(338,76,54,BLACK,0,4); //6
-   tft.drawChar(338,132,57,BLACK,0,4); //9
-   tft.drawChar(338,188,66,BLACK,0,4); //backspace
-
-   // draw info screen
-   tft.fillRoundRect(20,16,160,40,10,BLUE);
-   tft.setCursor(20,26);
-   tft.setTextColor(WHITE);
-   tft.setTextSize(2);
-   tft.println("Humid");
-
-   tft.fillRoundRect(20,72,160,40,10,BLUE);
-   tft.setCursor(20,82);
-   tft.setTextColor(WHITE);
-   tft.setTextSize(2);
-   tft.println("Temp");
-
-   tft.fillRoundRect(20,128,160,40,10,BLUE);
-   tft.setCursor(20,138);
-   tft.setTextColor(WHITE);
-   tft.setTextSize(2);
-   tft.println("Runtime");
+   overview();
 
    //Initialize sensor
    if (! sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
@@ -153,31 +114,54 @@ void loop() {
 
   struct touchscreenClick tsc = clickedTouchPad();
   if(tsc.tapped){
-    clickedNumpad(tsc.xpos, tsc.ypos);
+    if(state == "overview"){
+        clickedSide(tsc.xpos, tsc.ypos);
+    }
+    if(state == "settingsview"){
+        clickedSide(tsc.xpos, tsc.ypos);
+        clickedSetting(tsc.xpos, tsc.ypos);
+        if(editingSetting){
+          String b = clickedNumpad(tsc.xpos, tsc.ypos);
+          if(b == "S") humidSet = humidSeti;
+          else if(b == "B"){
+            String h = String(humidSeti);
+            h.remove(h.length()-1);
+            humidSeti = h.toInt();
+          }
+          else{
+            String h = String(humidSeti)+String(b);
+            humidSeti = h.toInt();
+          }
+        }
+        displaySettingUpdate(humidSeti);
+    }
+    if(state == "graphview"){
+        clickedSide(tsc.xpos, tsc.ypos);
+    }
   }
   struct sens temphumid = readSHT31();
   DateTime rtctime = rtc.now();
-  updateValues(rtctime, temphumid);
+  if(state == "overview") updateValues(rtctime, temphumid);
   saveData(rtctime, temphumid);
   delay(1000);                       // wait for a second
 
 }
 
 void updateValues(DateTime rtctime, struct sens temphumid){
-  tft.fillRoundRect(20,16,160,40,10,BLUE);
-   tft.setCursor(20,26);
+   tft.fillRoundRect(56,16,200,40,10,BLUE);
+   tft.setCursor(56,26);
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
    tft.println("Humid: " + String(temphumid.h) + "%");
 
-   tft.fillRoundRect(20,72,160,40,10,BLUE);
-   tft.setCursor(20,82);
+   tft.fillRoundRect(56,72,200,40,10,BLUE);
+   tft.setCursor(56,82);
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
    tft.println("Temp: " + String(temphumid.t) + "C");
 
-   tft.fillRoundRect(20,128,160,40,10,BLUE);
-   tft.setCursor(20,138);
+   tft.fillRoundRect(56,128,200,40,10,BLUE);
+   tft.setCursor(56,138);
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
    tft.println("Runtime: " + String(rtctime.second()));
@@ -191,6 +175,18 @@ struct touchscreenClick clickedTouchPad(){
   pinMode(YP, OUTPUT);
   if(tp.z > MINPRESSURE && tp.z < MAXPRESSURE){
     tap.tapped = true;
+    tap.xpos = map(tp.y, TS_BOT, TS_TOP, 0, tft.width());
+    tap.ypos = map(tp.x, TS_LEFT, TS_RT, 0, tft.height());
+    //Serial.println("xpos: " + String(tap.xpos) + "ypos: " + String(tap.ypos));
+  }
+  else{
+    tap.tapped = false;
+  }
+  return tap;
+
+}
+
+String clickedNumpad(int xpos, int ypos){
     //reset the selection box
     tft.drawRoundRect(216,16,NUMPADSIZE,NUMPADSIZE,10,GREY);
     tft.drawRoundRect(272,16,NUMPADSIZE,NUMPADSIZE,10,GREY);
@@ -201,100 +197,96 @@ struct touchscreenClick clickedTouchPad(){
     tft.drawRoundRect(216,128,NUMPADSIZE,NUMPADSIZE,10,GREY);
     tft.drawRoundRect(272,128,NUMPADSIZE,NUMPADSIZE,10,GREY);
     tft.drawRoundRect(328,128,NUMPADSIZE,NUMPADSIZE,10,GREY);
-    
-    tap.xpos = map(tp.y, TS_BOT, TS_TOP, 0, tft.width());
-    tap.ypos = map(tp.x, TS_LEFT, TS_RT, 0, tft.height());
-    Serial.println("xpos: " + String(tap.xpos) + "ypos: " + String(tap.ypos));
-  }
-  else{
-    tap.tapped = false;
-  }
-  return tap;
-
-}
-
-void clickedNumpad(int xpos, int ypos){
+    tft.drawRoundRect(216,184,NUMPADSIZE,NUMPADSIZE,10,GREEN);
+    tft.drawRoundRect(272,184,NUMPADSIZE,NUMPADSIZE,10,GREY);
+    tft.drawRoundRect(328,184,NUMPADSIZE,NUMPADSIZE,10,RED);
   
     if(ypos > 16 && ypos < (16+NUMPADSIZE)){ //1st row
         if(xpos > 216 && xpos < (216+NUMPADSIZE)){ //1
           tft.drawRoundRect(216,16,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("1");
+          return "1";
         }
-        if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //2
+        else if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //2
           tft.drawRoundRect(272,16,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("2");
+          return "2";
         }
-        if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //3
+        else if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //3
           tft.drawRoundRect(328,16,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("3");
+          return "3";
         }
     }
-    if(ypos > 72 && ypos < (72+NUMPADSIZE)){ //2nd row
+    else if(ypos > 72 && ypos < (72+NUMPADSIZE)){ //2nd row
         if(xpos > 216 && xpos < (216+NUMPADSIZE)){ //4
           tft.drawRoundRect(216,72,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("4");
+          return "4";
         }
-        if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //5
+        else if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //5
           tft.drawRoundRect(272,72,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("5");
+          return "5";
         }
-        if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //6
+        else if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //6
           tft.drawRoundRect(328,72,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("6");
+          return "6";
         }
     }
-    if(ypos > 128 && ypos < (128+NUMPADSIZE)){ //3rd row
+    else if(ypos > 128 && ypos < (128+NUMPADSIZE)){ //3rd row
         if(xpos > 216 && xpos < (216+NUMPADSIZE)){ //7
           tft.drawRoundRect(216,128,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("7");
+          return "7";
         }
-        if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //8
+        else if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //8
           tft.drawRoundRect(272,128,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("8");
+          return "8";
         }
-        if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //9
+        else if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //9
           tft.drawRoundRect(328,128,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("9");
+          return "9";
         }
     }
-    if(ypos > 184 && ypos < (184+NUMPADSIZE)){ //4rd row
+    else if(ypos > 184 && ypos < (184+NUMPADSIZE)){ //4rd row
         if(xpos > 216 && xpos < (216+NUMPADSIZE)){ //Set
-          tft.drawRoundRect(216,128,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("S");
+          tft.drawRoundRect(216,184,NUMPADSIZE,NUMPADSIZE,10,GREEN);
+          return "S";
         }
-        if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //0
-          tft.drawRoundRect(272,128,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("0");
+        else if(xpos > 272 && xpos < (272+NUMPADSIZE)){ //0
+          tft.drawRoundRect(272,184,NUMPADSIZE,NUMPADSIZE,10,GREEN);
+          return "0";
         }
-        if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //Backspace
-          tft.drawRoundRect(328,128,NUMPADSIZE,NUMPADSIZE,10,GREEN);
-          tft.fillRect(0,120,198,20,GREY);
-          tft.setCursor(0,120);
-          tft.println("B");
+        else if(xpos > 328 && xpos < (328+NUMPADSIZE)){ //Backspace
+          tft.drawRoundRect(328,184,NUMPADSIZE,NUMPADSIZE,10,GREEN);
+          return "B";
         }
     }
+    return "";
+}
+
+void clickedSetting(int xpos, int ypos){
+  if(xpos > 56 && xpos < (56+130)){
+    if (ypos > 16 && ypos < (16+40) && !editingSetting){
+      editingSetting = true;
+    }
+    else if (ypos > 16 && ypos < (16+40) && editingSetting){
+      humidSet = humidSeti;
+      editingSetting = false;
+    }
+  }
+}
+
+void clickedSide(int xpos, int ypos){
+  if(xpos > 20 && xpos < (20+NUMPADSIZE)){
+    if (ypos > 16 && ypos < (16+NUMPADSIZE)){
+      state = "overview";
+      overview();
+    }
+    if(ypos > 72 && ypos < (72+NUMPADSIZE)){
+      state = "settingsview";
+      settingview();
+    }
+    if(ypos > 128 && ypos < (128+NUMPADSIZE)){
+      state = "graphview";
+      graphview();
+    }
+  }
 }
 
 struct sens readSHT31(){
@@ -314,5 +306,127 @@ void saveData(DateTime rtctime, struct sens temphumid){
     tft.setTextColor(WHITE);
     tft.setTextSize(2);
     tft.println("Error saving data to file");
+  }
+}
+
+// View changes
+void overview(){
+  tft.fillScreen(GREY);
+  // draw selection buttons
+  tft.fillRoundRect(10, 16, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 20);
+  tft.setTextSize(2);
+  tft.write(0x03);
+  
+  tft.fillRoundRect(10, 72, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20,76);
+  tft.setTextSize(2);
+  tft.write(0x23);
+  
+  tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 132);
+  tft.setTextSize(2);
+  tft.write(0xF7);
+
+   // draw info
+   tft.fillRoundRect(56,16,200,40,10,BLUE);
+   tft.setCursor(56,26);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Humid: ");
+
+   tft.fillRoundRect(56,72,200,40,10,BLUE);
+   tft.setCursor(56,82);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Temp: ");
+
+   tft.fillRoundRect(56,128,200,40,10,BLUE);
+   tft.setCursor(56,138);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Runtime: ");
+}
+
+void settingview(){
+   // draw basic layout
+   tft.fillScreen(GREY);
+   tft.drawFastVLine(200,0, 240, WHITE); // seperation line between the info and control section
+
+  // draw selection buttons
+  tft.fillRoundRect(10, 16, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 20);
+  tft.setTextSize(2);
+  tft.write(0x03);
+  
+  tft.fillRoundRect(10, 72, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20,76);
+  tft.setTextSize(2);
+  tft.write(0x23);
+  
+  tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 132);
+  tft.setTextSize(2);
+  tft.write(0xF7);
+   
+   // draw buttons for control screen
+   // 40x40 px buttons in a 3x4 grid, 16px to the edge and spacing
+   tft.fillRoundRect(216,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //1
+   tft.fillRoundRect(216,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //4
+   tft.fillRoundRect(216,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //7
+   tft.fillRoundRect(216,184,NUMPADSIZE,NUMPADSIZE,10,GREEN); //set
+   tft.fillRoundRect(272,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //2
+   tft.fillRoundRect(272,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //5
+   tft.fillRoundRect(272,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //8
+   tft.fillRoundRect(272,184,NUMPADSIZE,NUMPADSIZE,10,WHITE); //0
+   tft.fillRoundRect(328,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //3
+   tft.fillRoundRect(328,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //6
+   tft.fillRoundRect(328,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //9
+   tft.fillRoundRect(328,184,NUMPADSIZE,NUMPADSIZE,10,RED); //backspace
+   tft.drawChar(226,20,49,BLACK,0,4); //1
+   tft.drawChar(226,76,52,BLACK,0,4); //4
+   tft.drawChar(226,132,55,BLACK,0,4); //7
+   tft.drawChar(226,188,83,BLACK,0,4); //set
+   tft.drawChar(282,20,50,BLACK,0,4); //2
+   tft.drawChar(282,76,53,BLACK,0,4); //5
+   tft.drawChar(282,132,56,BLACK,0,4); //8
+   tft.drawChar(282,188,48,BLACK,0,4); //0
+   tft.drawChar(338,20,51,BLACK,0,4); //3
+   tft.drawChar(338,76,54,BLACK,0,4); //6
+   tft.drawChar(338,132,57,BLACK,0,4); //9
+   tft.drawChar(338,188,66,BLACK,0,4); //backspace
+
+   // draw settings screen
+   tft.fillRoundRect(56,16,130,40,10,BLUE);
+   tft.setCursor(56,26);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Humid: " + String(humidSet));
+}
+
+void displaySettingUpdate(int humidSeti){
+   // draw settings screen
+   if(editingSetting){
+    tft.fillRoundRect(56,16,130,40,10,GREEN);
+    tft.setCursor(56,26);
+    tft.setTextColor(BLACK);
+    tft.setTextSize(2);
+    tft.println("Humid: " + String(humidSeti));
+   }
+   else{
+    tft.fillRoundRect(56,16,130,40,10,BLUE);
+    tft.setCursor(56,26);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.println("Humid: " + String(humidSeti));
+   }
+}
+
+void graphview(){
+  int humidGr[16]; //every half an hour for eight hours
+  File file = SD.open("datalog.csv", FILE_READ);
+  if(file){
+    String line;
+    fileLength = file.size();
   }
 }
