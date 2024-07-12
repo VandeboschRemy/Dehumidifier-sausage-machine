@@ -26,7 +26,15 @@
    String state = "overview"; // define state of the view, options: overview, settingsview, graphview
    int humidSet = 70; // Set default to 70
    int humidSeti = 70;
-   boolean editingSetting = false;
+   int FanSet = 1000; // Default fan speed 1000 rpm.
+   int FanSeti = 1000;
+   int ClockSegment = 0; // Cycle through the different sections of time to set
+   int ClockSeti = 0;
+   boolean editingSettingH = false;
+   boolean editingSettingF = false;
+   boolean editingSettingC = false;
+   int savecounter = 0;
+   double ox , oy ;
 
 //PORTRAIT  CALIBRATION     240 x 400
 //x = map(p.x, LEFT=910, RT=134, 0, 240)
@@ -66,6 +74,7 @@
 void setup() {
   
    pinMode(LED_BUILTIN, OUTPUT);
+   pinMode(23, OUTPUT);
    
    uint16_t ID;
    ID = tft.readID();
@@ -120,7 +129,7 @@ void loop() {
     if(state == "settingsview"){
         clickedSide(tsc.xpos, tsc.ypos);
         clickedSetting(tsc.xpos, tsc.ypos);
-        if(editingSetting){
+        if(editingSettingH){
           String b = clickedNumpad(tsc.xpos, tsc.ypos);
           if(b == "S") humidSet = humidSeti;
           else if(b == "B"){
@@ -133,7 +142,57 @@ void loop() {
             humidSeti = h.toInt();
           }
         }
-        displaySettingUpdate(humidSeti);
+        if(editingSettingF){
+          String b = clickedNumpad(tsc.xpos, tsc.ypos);
+          if(b == "S") FanSet = FanSeti;
+          else if(b == "B"){
+            String h = String(FanSeti);
+            h.remove(h.length()-1);
+            FanSeti = h.toInt();
+          }
+          else{
+            String h = String(FanSeti)+String(b);
+            FanSeti = h.toInt();
+          }
+        }
+        if(editingSettingC){
+          String b = clickedNumpad(tsc.xpos, tsc.ypos);
+          if(b == "S"){
+            DateTime rtctime = rtc.now();
+            switch(ClockSegment){
+              case 0:
+                rtc.adjust(DateTime(ClockSeti, rtctime.month(), rtctime.day(), rtctime.hour(), rtctime.minute(), rtctime.second()));
+                break;
+              case 1:
+                rtc.adjust(DateTime(rtctime.year(), ClockSeti, rtctime.day(), rtctime.hour(), rtctime.minute(), rtctime.second()));
+                break;
+              case 2:
+                rtc.adjust(DateTime(rtctime.year(), rtctime.month(), ClockSeti, rtctime.hour(), rtctime.minute(), rtctime.second()));
+                break;
+              case 3:
+                rtc.adjust(DateTime(rtctime.year(), rtctime.month(), rtctime.day(), ClockSeti, rtctime.minute(), rtctime.second()));
+                break;
+              case 4:
+                rtc.adjust(DateTime(rtctime.year(), rtctime.month(), rtctime.day(), rtctime.hour(), ClockSeti, rtctime.second()));
+                break;
+              case 5:
+                rtc.adjust(DateTime(rtctime.year(), rtctime.month(), rtctime.day(), rtctime.hour(), rtctime.minute(), ClockSeti));
+                break;
+            }
+            ClockSegment = ClockSegment + 1;
+            ClockSeti = 0;
+          }
+          else if(b == "B"){
+            String h = String(ClockSeti);
+            h.remove(h.length()-1);
+            ClockSeti = h.toInt();
+          }
+          else{
+            String h = String(ClockSeti)+String(b);
+            ClockSeti = h.toInt();
+          }
+        }
+        displaySettingUpdate(humidSeti, FanSeti, ClockSegment, ClockSeti);
     }
     if(state == "graphview"){
         clickedSide(tsc.xpos, tsc.ypos);
@@ -142,8 +201,10 @@ void loop() {
   struct sens temphumid = readSHT31();
   DateTime rtctime = rtc.now();
   if(state == "overview") updateValues(rtctime, temphumid);
-  saveData(rtctime, temphumid);
-  delay(1000);                       // wait for a second
+  boolean dehumidstate = toggleDehumid(temphumid, humidSet, 5);
+  if(savecounter == 120)saveData(rtctime, temphumid, dehumidstate); savecounter = 0; // save date every minute
+  savecounter = savecounter + 1;
+  delay(500);                       // wait for half a second
 
 }
 
@@ -164,7 +225,7 @@ void updateValues(DateTime rtctime, struct sens temphumid){
    tft.setCursor(56,138);
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
-   tft.println("Runtime: " + String(rtctime.second()));
+   tft.println("Time: " + String(rtctime.hour())+ ":" +String(rtctime.minute())+ ":" +String(rtctime.second()));
 }
 
 struct touchscreenClick clickedTouchPad(){
@@ -262,12 +323,30 @@ String clickedNumpad(int xpos, int ypos){
 
 void clickedSetting(int xpos, int ypos){
   if(xpos > 56 && xpos < (56+130)){
-    if (ypos > 16 && ypos < (16+40) && !editingSetting){
-      editingSetting = true;
+    if (ypos > 16 && ypos < (16+40) && !editingSettingH){
+      editingSettingH = true;
     }
-    else if (ypos > 16 && ypos < (16+40) && editingSetting){
+    else if (ypos > 16 && ypos < (16+40) && editingSettingH){
       humidSet = humidSeti;
-      editingSetting = false;
+      editingSettingH = false;
+    }
+  }
+  if(xpos > 56 && xpos < (56+130)){
+    if (ypos > 72 && ypos < (72+40) && !editingSettingF){
+      editingSettingF = true;
+    }
+    else if (ypos > 16 && ypos < (16+40) && editingSettingF){
+      FanSet = FanSeti;
+      editingSettingF = false;
+    }
+  }
+  if(xpos > 56 && xpos < (56+130)){
+    if (ypos > 128 && ypos < (128+40) && !editingSettingC){
+      editingSettingC = true;
+    }
+    else if (ypos > 128 && ypos < (128+40) && editingSettingC){
+      editingSettingC = false;
+      ClockSegment = 0;
     }
   }
 }
@@ -296,10 +375,15 @@ struct sens readSHT31(){
   return th;
 }
 
-void saveData(DateTime rtctime, struct sens temphumid){
+boolean toggleDehumid (struct sens temphumid, int humidSet, int hysteresis){
+  if(temphumid.h > (humidSet + hysteresis)) digitalWrite(23, true); return true; //turn dehumidifier on
+  if(temphumid.h < (humidSet - hysteresis)) digitalWrite(23, false); return false; // turn demuhidfier off
+}
+
+void saveData(DateTime rtctime, struct sens temphumid, boolean dehumidstate){
   File file = SD.open("datalog.csv", FILE_WRITE);
   if(file){
-    file.println(String(rtctime.second())+","+String(temphumid.h)+","+String(temphumid.t));
+    file.println(String(rtctime.hour())+ ":" +String(rtctime.minute())+ ":" +String(rtctime.second())+","+String(temphumid.h)+","+String(temphumid.t) + "," + String(dehumidstate));
     file.close();
   }else{
     tft.setCursor(0,0);
@@ -402,11 +486,26 @@ void settingview(){
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
    tft.println("Humid: " + String(humidSet));
+
+   tft.fillRoundRect(56,72,130,40,10,BLUE);
+   tft.setCursor(56,82);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Fan: " + String(FanSet));
+
+   tft.fillRoundRect(56,128,130,40,10,BLUE);
+   tft.setCursor(56,138);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Update Clock");
 }
 
-void displaySettingUpdate(int humidSeti){
+void displaySettingUpdate(int humidSeti, int FanSeti, int ClockSegment, int ClockSeti){
+  Serial.println(editingSettingC);
+  Serial.println(ClockSegment);
+  Serial.println(ClockSeti);
    // draw settings screen
-   if(editingSetting){
+   if(editingSettingH){
     tft.fillRoundRect(56,16,130,40,10,GREEN);
     tft.setCursor(56,26);
     tft.setTextColor(BLACK);
@@ -420,13 +519,165 @@ void displaySettingUpdate(int humidSeti){
     tft.setTextSize(2);
     tft.println("Humid: " + String(humidSeti));
    }
+   
+   if(editingSettingF){
+    tft.fillRoundRect(56,72,130,40,10,GREEN);
+    tft.setCursor(56,82);
+    tft.setTextColor(BLACK);
+    tft.setTextSize(2);
+    tft.println("Fan: " + String(FanSeti));
+   }
+   else{
+    tft.fillRoundRect(56,72,130,40,10,BLUE);
+    tft.setCursor(56,82);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.println("Fan: " + String(FanSeti));
+   }
+
+   if(editingSettingC){
+    tft.fillRoundRect(56,128,130,40,10,GREEN);
+    tft.setCursor(56,138);
+    tft.setTextColor(BLACK);
+    tft.setTextSize(2);
+    switch(ClockSegment){
+      case 0:
+        tft.println("Y: " + String(ClockSeti));
+        break;
+      case 1:
+        tft.println("M: " + String(ClockSeti));
+        break;
+      case 2:
+        tft.println("D: " + String(ClockSeti));
+        break;
+      case 3:
+        tft.println("H: " + String(ClockSeti));
+        break;
+      case 4:
+        tft.println("m: " + String(ClockSeti));
+        break;
+      case 5:
+        tft.println("s: " + String(ClockSeti));
+        break;
+    }
+   }
+   else{
+    tft.fillRoundRect(56,128,130,40,10,BLUE);
+    tft.setCursor(56,138);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.println("Update Clock");
+   }
 }
 
 void graphview(){
-  int humidGr[16]; //every half an hour for eight hours
+  //every half an hour for eight hours
   File file = SD.open("datalog.csv", FILE_READ);
   if(file){
-    String line;
-    fileLength = file.size();
+    char *line;
+    int fileLength = file.size();
+    if(fileLength > 480){ // at least 8 hours of data
+      for (int i = 0; i <= 480; i=i+30){
+        file.seek(i);
+        line = file.readStringUntil("\n").c_str();
+        char *token = strtok(line, ",");
+        String timedate = token;
+        token = strtok(NULL, ","); // point to the next part of the string
+        int humidity = int(token);
+        token = strtok(NULL, ",");
+        int temp = int(token);
+      }
+    }
   }
 }
+
+void Graph(MCUFRIEND_kbv &d, double x, double y, double gx, double gy, double w, double h, double xlo, double xhi, double xinc, double ylo, double yhi, double yinc, String title, String xlabel, String ylabel, unsigned int gcolor, unsigned int acolor, unsigned int pcolor, unsigned int tcolor, unsigned int bcolor, boolean &redraw) {
+
+  double ydiv, xdiv;
+  // initialize old x and old y in order to draw the first point of the graph
+  // but save the transformed value
+  // note my transform funcition is the same as the map function, except the map uses long and we need doubles
+  //static double ox = (x - xlo) * ( w) / (xhi - xlo) + gx;
+  //static double oy = (y - ylo) * (gy - h - gy) / (yhi - ylo) + gy;
+  double i;
+  double temp;
+  int rot, newrot;
+
+  if (redraw == true) {
+
+    redraw = false;
+    ox = (x - xlo) * ( w) / (xhi - xlo) + gx;
+    oy = (y - ylo) * (gy - h - gy) / (yhi - ylo) + gy;
+    // draw y scale
+    for ( i = ylo; i <= yhi; i += yinc) {
+      // compute the transform
+      temp =  (i - ylo) * (gy - h - gy) / (yhi - ylo) + gy;
+
+      if (i == 0) {
+        d.drawLine(gx, temp, gx + w, temp, acolor);
+      }
+      else {
+        d.drawLine(gx, temp, gx + w, temp, gcolor);
+      }
+
+      d.setTextSize(1);
+      d.setTextColor(tcolor, bcolor);
+      d.setCursor(gx - 40, temp);
+      // precision is default Arduino--this could really use some format control
+      d.println(i);
+    }
+    // draw x scale
+    for (i = xlo; i <= xhi; i += xinc) {
+
+      // compute the transform
+
+      temp =  (i - xlo) * ( w) / (xhi - xlo) + gx;
+      if (i == 0) {
+        d.drawLine(temp, gy, temp, gy - h, acolor);
+      }
+      else {
+        d.drawLine(temp, gy, temp, gy - h, gcolor);
+      }
+
+      d.setTextSize(1);
+      d.setTextColor(tcolor, bcolor);
+      d.setCursor(temp, gy + 10);
+      // precision is default Arduino--this could really use some format control
+      d.println(i);
+    }
+
+    //now draw the labels
+    d.setTextSize(2);
+    d.setTextColor(tcolor, bcolor);
+    d.setCursor(gx , gy - h - 30);
+    d.println(title);
+
+    d.setTextSize(1);
+    d.setTextColor(acolor, bcolor);
+    d.setCursor(gx , gy + 20);
+    d.println(xlabel);
+
+    d.setTextSize(1);
+    d.setTextColor(acolor, bcolor);
+    d.setCursor(gx - 30, gy - h - 10);
+    d.println(ylabel);
+
+
+  }
+
+  //graph drawn now plot the data
+  // the entire plotting code are these few lines...
+  // recall that ox and oy are initialized as static above
+  x =  (x - xlo) * ( w) / (xhi - xlo) + gx;
+  y =  (y - ylo) * (gy - h - gy) / (yhi - ylo) + gy;
+  d.drawLine(ox, oy, x, y, pcolor);
+  d.drawLine(ox, oy + 1, x, y + 1, pcolor);
+  d.drawLine(ox, oy - 1, x, y - 1, pcolor);
+  ox = x;
+  oy = y;
+
+}
+
+/*
+  End of graphing function
+*/
