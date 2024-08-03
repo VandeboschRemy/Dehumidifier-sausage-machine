@@ -42,6 +42,7 @@
    int savecounter = 0;
    double ox , oy ;
    boolean graphsredraw = true;
+   boolean dehumidState = false;
 
 //PORTRAIT  CALIBRATION     240 x 400
 //x = map(p.x, LEFT=910, RT=134, 0, 240)
@@ -82,6 +83,7 @@ void setup() {
   
    pinMode(LED_BUILTIN, OUTPUT);
    pinMode(23, OUTPUT);
+   digitalWrite(23, true);
    
    uint16_t ID;
    ID = tft.readID();
@@ -114,6 +116,13 @@ void setup() {
    tft.setTextSize(2);
    tft.println("SD-card not present or failed");
   }
+
+  // Set registers to 25KHz PWM output to control the fanspeed.
+  TCCR5A = B00100011;
+  TCCR5B = B11001;
+  OCR5B = 639;
+  pinMode(45, OUTPUT);
+  SetFanSpeed(FanSet);
 
 }
 
@@ -151,7 +160,10 @@ void loop() {
         }
         if(editingSettingF){
           String b = clickedNumpad(tsc.xpos, tsc.ypos);
-          if(b == "S") FanSet = FanSeti;
+          if(b == "S"){
+            FanSet = FanSeti;
+            SetFanSpeed(FanSet);
+          }
           else if(b == "B"){
             String h = String(FanSeti);
             h.remove(h.length()-1);
@@ -411,7 +423,7 @@ struct sens readSHT31(){
   return th;
 }
 
-boolean toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart,int hysteresis, DateTime startRamp, int ramptime, DateTime current){
+boolean toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart, int hysteresis, DateTime startRamp, int ramptime, DateTime current){
   float hs = 0;
   if(ramptime != 0){
     int hourselapsed = (current.hour() - startRamp.hour()) + (current.day() - startRamp.day())*24 + (current.month()-startRamp.month())*732;
@@ -419,16 +431,18 @@ boolean toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart,i
     hs = humidRampStart + (ramprate*hourselapsed);
   }
   else hs = humidSet;
-  if(temphumid.h > (hs + hysteresis)){
-    digitalWrite(23, true);
+  if(temphumid.h > (hs + hysteresis) and dehumidState == false){
+    digitalWrite(23, false);
     delay(200);
-    digitalWrite(23, false); // pulse relay to simulate button press.
+    digitalWrite(23, true); // pulse relay to simulate button press.
+    dehumidState = true;
     return true; //turn dehumidifier on
   }
-  if(temphumid.h < (hs - hysteresis)){
-    digitalWrite(23, true); 
+  if(temphumid.h < (hs - hysteresis) and dehumidState == true){
+    digitalWrite(23, false); 
     delay(200);
-    digitalWrite(23, false);
+    digitalWrite(23, true);
+    dehumidState = false;
     return false; // turn demuhidfier off
   }
 }
@@ -446,7 +460,11 @@ void saveData(DateTime rtctime, struct sens temphumid, boolean dehumidstate){
   }
 }
 
-// insert the fan code
+void SetFanSpeed(int rpm){
+  float duty = 1;
+  if(rpm <= 3000) float duty = rpm/3000; // max speed is 3000 rpm
+  OCR5B = (uint16_t)(639*duty);
+}
 
 // View changes
 void overview(){
@@ -674,7 +692,7 @@ void graphview(){
     int fileLength = file.size();
     Serial.println("size " + String(fileLength)); 
     if(fileLength > 9){ // at least 8 hours of data | less for testing
-      for (int i = 0; i <= 1; i=i+1){
+      for (int i = 0; i <= 10; i=i+1){
         //file.seek(i);
         String line = file.readStringUntil('\n');
         char* token = strtok(line.c_str(), ",");
@@ -683,7 +701,7 @@ void graphview(){
         int humidity = String(token).toInt();
         token = strtok(NULL, ",");
         int temp = String(token).toInt();
-        Graph(tft, i, humidity, 80, 240, 360, 160, 0, 10, 1, 0, 100, 10, "Moist", "Minutes past", "Humidity (%)", BLUE, RED, YELLOW, WHITE, BLACK, graphsredraw);
+        Graph(tft, i, humidity, 90, 200, 300, 160, 0, 10, 1, 0, 100, 10, "Moist", "Minutes past", "Humidity (%)", BLUE, RED, YELLOW, WHITE, BLACK, graphsredraw);
       }
     }
     file.close();
