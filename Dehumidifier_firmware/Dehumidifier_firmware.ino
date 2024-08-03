@@ -26,15 +26,22 @@
    String state = "overview"; // define state of the view, options: overview, settingsview, graphview
    int humidSet = 70; // Set default to 70
    int humidSeti = 70;
+   float humidRampStart = 0;
+   int hysteresis = 2; // The hysteresis in % on the humidity for triggering the relay.
    int FanSet = 1000; // Default fan speed 1000 rpm.
    int FanSeti = 1000;
    int ClockSegment = 0; // Cycle through the different sections of time to set
    int ClockSeti = 0;
+   int ramptime = 0; // Set the time to ramp from current humidity to set value in hours.
+   int ramptimei = 0;
+   DateTime startRamp = DateTime(2024,1,1,0,0,0);
    boolean editingSettingH = false;
    boolean editingSettingF = false;
    boolean editingSettingC = false;
+   boolean editingSettingR = false;
    int savecounter = 0;
    double ox , oy ;
+   boolean graphsredraw = true;
 
 //PORTRAIT  CALIBRATION     240 x 400
 //x = map(p.x, LEFT=910, RT=134, 0, 240)
@@ -192,7 +199,24 @@ void loop() {
             ClockSeti = h.toInt();
           }
         }
-        displaySettingUpdate(humidSeti, FanSeti, ClockSegment, ClockSeti);
+        if(editingSettingR){
+          String b = clickedNumpad(tsc.xpos, tsc.ypos);
+          if(b == "S"){
+            ramptime = ramptimei;
+            startRamp = rtc.now();
+            humidRampStart = readSHT31().h;
+          }
+          else if(b == "B"){
+            String h = String(ramptimei);
+            h.remove(h.length()-1);
+            FanSeti = h.toInt();
+          }
+          else{
+            String h = String(ramptimei)+String(b);
+            FanSeti = h.toInt();
+          }
+        }
+        displaySettingUpdate(humidSeti, FanSeti, ClockSegment, ClockSeti, ramptime, ramptimei);
     }
     if(state == "graphview"){
         clickedSide(tsc.xpos, tsc.ypos);
@@ -201,8 +225,11 @@ void loop() {
   struct sens temphumid = readSHT31();
   DateTime rtctime = rtc.now();
   if(state == "overview") updateValues(rtctime, temphumid);
-  boolean dehumidstate = toggleDehumid(temphumid, humidSet, 5);
-  if(savecounter == 120)saveData(rtctime, temphumid, dehumidstate); savecounter = 0; // save date every minute
+  boolean dehumidstate = toggleDehumid(temphumid, humidSet, humidRampStart, hysteresis, startRamp, ramptime, rtctime);
+  if(savecounter == 120){
+    saveData(rtctime, temphumid, dehumidstate); 
+    savecounter = 0; // save date every minute
+  }
   savecounter = savecounter + 1;
   delay(500);                       // wait for half a second
 
@@ -349,6 +376,15 @@ void clickedSetting(int xpos, int ypos){
       ClockSegment = 0;
     }
   }
+  if(xpos > 56 && xpos < (56+130)){
+    if (ypos > 184 && ypos < (184+40) && !editingSettingR){
+      editingSettingR = true;
+    }
+    else if (ypos > 184 && ypos < (184+40) && editingSettingR){
+      editingSettingR = false;
+      ramptime = ramptimei;
+    }
+  }
 }
 
 void clickedSide(int xpos, int ypos){
@@ -375,15 +411,32 @@ struct sens readSHT31(){
   return th;
 }
 
-boolean toggleDehumid (struct sens temphumid, int humidSet, int hysteresis){
-  if(temphumid.h > (humidSet + hysteresis)) digitalWrite(23, true); return true; //turn dehumidifier on
-  if(temphumid.h < (humidSet - hysteresis)) digitalWrite(23, false); return false; // turn demuhidfier off
+boolean toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart,int hysteresis, DateTime startRamp, int ramptime, DateTime current){
+  float hs = 0;
+  if(ramptime != 0){
+    int hourselapsed = (current.hour() - startRamp.hour()) + (current.day() - startRamp.day())*24 + (current.month()-startRamp.month())*732;
+    float ramprate = (humidSet - humidRampStart)/(ramptime);
+    hs = humidRampStart + (ramprate*hourselapsed);
+  }
+  else hs = humidSet;
+  if(temphumid.h > (hs + hysteresis)){
+    digitalWrite(23, true);
+    delay(200);
+    digitalWrite(23, false); // pulse relay to simulate button press.
+    return true; //turn dehumidifier on
+  }
+  if(temphumid.h < (hs - hysteresis)){
+    digitalWrite(23, true); 
+    delay(200);
+    digitalWrite(23, false);
+    return false; // turn demuhidfier off
+  }
 }
 
 void saveData(DateTime rtctime, struct sens temphumid, boolean dehumidstate){
   File file = SD.open("datalog.csv", FILE_WRITE);
   if(file){
-    file.println(String(rtctime.hour())+ ":" +String(rtctime.minute())+ ":" +String(rtctime.second())+","+String(temphumid.h)+","+String(temphumid.t) + "," + String(dehumidstate));
+    file.println(String(rtctime.year())+ "/" +String(rtctime.month())+ "/" +String(rtctime.day())+ "," +String(rtctime.hour())+ ":" +String(rtctime.minute())+ ":" +String(rtctime.second())+","+String(temphumid.h)+","+String(temphumid.t) + "," + String(dehumidstate));
     file.close();
   }else{
     tft.setCursor(0,0);
@@ -392,6 +445,8 @@ void saveData(DateTime rtctime, struct sens temphumid, boolean dehumidstate){
     tft.println("Error saving data to file");
   }
 }
+
+// insert the fan code
 
 // View changes
 void overview(){
@@ -497,10 +552,16 @@ void settingview(){
    tft.setCursor(56,138);
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
-   tft.println("Update Clock");
+   tft.println("UpdateClock");
+
+   tft.fillRoundRect(56,184,130,40,10,BLUE);
+   tft.setCursor(56,194);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Ramp: " + String(ramptime));
 }
 
-void displaySettingUpdate(int humidSeti, int FanSeti, int ClockSegment, int ClockSeti){
+void displaySettingUpdate(int humidSeti, int FanSeti, int ClockSegment, int ClockSeti, int ramptime, int ramptimei){
   Serial.println(editingSettingC);
   Serial.println(ClockSegment);
   Serial.println(ClockSeti);
@@ -568,26 +629,64 @@ void displaySettingUpdate(int humidSeti, int FanSeti, int ClockSegment, int Cloc
     tft.setTextSize(2);
     tft.println("Update Clock");
    }
+   if(editingSettingR){
+    tft.fillRoundRect(56,184,130,40,10,GREEN);
+    tft.setCursor(56,194);
+    tft.setTextColor(BLACK);
+    tft.setTextSize(2);
+    tft.println("Ramp: " + String(ramptimei));
+   }
+   else{
+    tft.fillRoundRect(56,184,130,40,10,BLUE);
+    tft.setCursor(56,194);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.println("Ramp: " + String(ramptimei));
+   }
 }
 
 void graphview(){
+  // draw basic layout
+   tft.fillScreen(GREY);
+   //tft.drawFastVLine(200,0, 240, WHITE); // seperation line between the info and control section
+
+  // draw selection buttons
+  tft.fillRoundRect(10, 16, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 20);
+  tft.setTextSize(2);
+  tft.write(0x03);
+  
+  tft.fillRoundRect(10, 72, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20,76);
+  tft.setTextSize(2);
+  tft.write(0x23);
+  
+  tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 132);
+  tft.setTextSize(2);
+  tft.write(0xF7);
+
+  graphsredraw = true;  
   //every half an hour for eight hours
   File file = SD.open("datalog.csv", FILE_READ);
   if(file){
-    char *line;
+    String line;
     int fileLength = file.size();
-    if(fileLength > 480){ // at least 8 hours of data
-      for (int i = 0; i <= 480; i=i+30){
-        file.seek(i);
-        line = file.readStringUntil("\n").c_str();
-        char *token = strtok(line, ",");
+    Serial.println("size " + String(fileLength)); 
+    if(fileLength > 9){ // at least 8 hours of data | less for testing
+      for (int i = 0; i <= 1; i=i+1){
+        //file.seek(i);
+        String line = file.readStringUntil('\n');
+        char* token = strtok(line.c_str(), ",");
         String timedate = token;
         token = strtok(NULL, ","); // point to the next part of the string
-        int humidity = int(token);
+        int humidity = String(token).toInt();
         token = strtok(NULL, ",");
-        int temp = int(token);
+        int temp = String(token).toInt();
+        Graph(tft, i, humidity, 80, 240, 360, 160, 0, 10, 1, 0, 100, 10, "Moist", "Minutes past", "Humidity (%)", BLUE, RED, YELLOW, WHITE, BLACK, graphsredraw);
       }
     }
+    file.close();
   }
 }
 
