@@ -221,11 +221,11 @@ void loop() {
           else if(b == "B"){
             String h = String(ramptimei);
             h.remove(h.length()-1);
-            FanSeti = h.toInt();
+            ramptimei = h.toInt();
           }
           else{
             String h = String(ramptimei)+String(b);
-            FanSeti = h.toInt();
+            ramptimei = h.toInt();
           }
         }
         displaySettingUpdate(humidSeti, FanSeti, ClockSegment, ClockSeti, ramptime, ramptimei);
@@ -237,9 +237,9 @@ void loop() {
   struct sens temphumid = readSHT31();
   DateTime rtctime = rtc.now();
   if(state == "overview") updateValues(rtctime, temphumid);
-  boolean dehumidstate = toggleDehumid(temphumid, humidSet, humidRampStart, hysteresis, startRamp, ramptime, rtctime);
+  toggleDehumid(temphumid, humidSet, humidRampStart, hysteresis, startRamp, ramptime, rtctime);
   if(savecounter == 120){
-    saveData(rtctime, temphumid, dehumidstate); 
+    saveData(rtctime, temphumid, dehumidState);
     savecounter = 0; // save date every minute
   }
   savecounter = savecounter + 1;
@@ -423,12 +423,13 @@ struct sens readSHT31(){
   return th;
 }
 
-boolean toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart, int hysteresis, DateTime startRamp, int ramptime, DateTime current){
+void toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart, int hysteresis, DateTime startRamp, int ramptime, DateTime current){
   float hs = 0;
   if(ramptime != 0){
     int hourselapsed = (current.hour() - startRamp.hour()) + (current.day() - startRamp.day())*24 + (current.month()-startRamp.month())*732;
     float ramprate = (humidSet - humidRampStart)/(ramptime);
-    hs = humidRampStart + (ramprate*hourselapsed);
+    if(hourselapsed <= ramptime) hs = humidRampStart + (ramprate*hourselapsed);
+    else hs = humidSet;
   }
   else hs = humidSet;
   if(temphumid.h > (hs + hysteresis) and dehumidState == false){
@@ -436,21 +437,27 @@ boolean toggleDehumid (struct sens temphumid, int humidSet, int humidRampStart, 
     delay(200);
     digitalWrite(23, true); // pulse relay to simulate button press.
     dehumidState = true;
-    return true; //turn dehumidifier on
   }
   if(temphumid.h < (hs - hysteresis) and dehumidState == true){
     digitalWrite(23, false); 
     delay(200);
     digitalWrite(23, true);
     dehumidState = false;
-    return false; // turn demuhidfier off
   }
 }
 
 void saveData(DateTime rtctime, struct sens temphumid, boolean dehumidstate){
   File file = SD.open("datalog.csv", FILE_WRITE);
   if(file){
-    file.println(String(rtctime.year())+ "/" +String(rtctime.month())+ "/" +String(rtctime.day())+ "," +String(rtctime.hour())+ ":" +String(rtctime.minute())+ ":" +String(rtctime.second())+","+String(temphumid.h)+","+String(temphumid.t) + "," + String(dehumidstate));
+    String line = String(rtctime.year())+ "-" +String(rtctime.month())+ "-" +String(rtctime.day())+ "T" +String(rtctime.hour())+ ":" +String(rtctime.minute())+ ":" +String(rtctime.second())+","+String(temphumid.h)+","+String(temphumid.t) + "," + String(dehumidstate) + ",";
+    int filler = 35 - line.length();
+    int i = 0;
+    while(i < filler){
+      line = line + "#";
+      i+=1;
+    }
+    file.println(line);
+    Serial.println(line);
     file.close();
   }else{
     tft.setCursor(0,0);
@@ -690,18 +697,22 @@ void graphview(){
   if(file){
     String line;
     int fileLength = file.size();
-    Serial.println("size " + String(fileLength)); 
-    if(fileLength > 9){ // at least 8 hours of data | less for testing
-      for (int i = 0; i <= 10; i=i+1){
-        //file.seek(i);
+    Serial.println("size " + String(fileLength));
+    if(fileLength > 17760){ // at least 8 hours of data
+      for (int i = 8; i >= 0; i=i-1){
+        file.seek(fileLength - i*2220); // one point per hour
         String line = file.readStringUntil('\n');
+        Serial.println(line);
         char* token = strtok(line.c_str(), ",");
-        String timedate = token;
+        char* timedate = token;
+        char* tToken = strtok(timedate, "T");
+        tToken = strtok(NULL, "T");
+        String hToken = strtok(tToken, ":");
         token = strtok(NULL, ","); // point to the next part of the string
         int humidity = String(token).toInt();
         token = strtok(NULL, ",");
         int temp = String(token).toInt();
-        Graph(tft, i, humidity, 90, 200, 300, 160, 0, 10, 1, 0, 100, 10, "Moist", "Minutes past", "Humidity (%)", BLUE, RED, YELLOW, WHITE, BLACK, graphsredraw);
+        Graph(tft, hToken.toDouble(), humidity, 90, 200, 300, 160, 0, 10, 1, 0, 100, 10, "Moist Sausage", "Hour", "Humidity (%)", BLUE, RED, YELLOW, WHITE, BLACK, graphsredraw);
       }
     }
     file.close();
