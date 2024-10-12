@@ -19,8 +19,8 @@
    Adafruit_SHT31 sht31 = Adafruit_SHT31();
    RTC_DS3231 rtc; 
 
-   const int XP=8,XM=A2,YP=A3,YM=9; //240x400 ID=0x7793
-   const int TS_LEFT=910,TS_RT=134,TS_TOP=55,TS_BOT=935;
+   //const int XP=8,XM=A2,YP=A3,YM=9; //240x400 ID=0x7793
+   //const int TS_LEFT=910,TS_RT=134,TS_TOP=55,TS_BOT=935;
 
    // Variables
    String state = "overview"; // define state of the view, options: overview, settingsview, graphview
@@ -51,6 +51,17 @@
 //LANDSCAPE CALIBRATION     400 x 240
 //x = map(p.y, LEFT=55, RT=935, 0, 400)
 //y = map(p.x, TOP=134, BOT=910, 0, 240)
+
+//For the ILI9488 driver
+const int XP=9,XM=A3,YP=A2,YM=8; //320x480 ID=0x9488
+const int TS_LEFT=104,TS_RT=938,TS_TOP=71,TS_BOT=932; 
+//PORTRAIT  CALIBRATION     320 x 480
+//x = map(p.x, LEFT=104, RT=938, 0, 320)
+//y = map(p.y, TOP=71, BOT=932, 0, 480)
+//LANDSCAPE CALIBRATION     480 x 320
+//x = map(p.y, LEFT=71, RT=932, 0, 480)
+//y = map(p.x, TOP=938, BOT=104, 0, 320)
+
 
 
    TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
@@ -95,15 +106,18 @@ void setup() {
    tft.begin(ID);
    tft.setRotation(3);
    tft.cp437(true);
-
-   Initialize sensor
-   if (! sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
-    Serial.println("Couldn't find SHT31");
-  }
-
+   tft.invertDisplay(true);
+   tft.setTextSize(2);
+   tft.println("If it freezes here, the POWER to the I2C bus is faulty");
+  
   //Initialize RTC module 
   if(!rtc.begin()){
     Serial.println("couldnt start clock");
+  }
+   
+   //Initialize sensor
+   if(!sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
+    Serial.println("Couldn't find SHT31");
   }
 
   //Initialize the sd-card
