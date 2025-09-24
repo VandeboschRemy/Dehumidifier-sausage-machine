@@ -23,7 +23,7 @@
    //const int TS_LEFT=910,TS_RT=134,TS_TOP=55,TS_BOT=935;
 
    // Variables
-   String state = "overview"; // define state of the view, options: overview, settingsview, graphview
+   String state = "overview"; // define state of the view, options: overview, settingsview, settingsview2, graphview
    DateTime lastSave = DateTime(2024,1,1,0,0,0);
    int humidSet = 70; // Set default to 70
    int humidSeti = 70;
@@ -35,14 +35,18 @@
    int ClockSeti = 0;
    int ramptime = 0; // Set the time to ramp from current humidity to set value in hours.
    int ramptimei = 0;
+   int tempSet = 25; // Set the temperature of the sausage box
+   int tempSeti = 25;
    DateTime startRamp = DateTime(2024,1,1,0,0,0);
    boolean editingSettingH = false;
    boolean editingSettingF = false;
    boolean editingSettingC = false;
    boolean editingSettingR = false;
+   boolean editingSettingT = false;
    double ox , oy ;
    boolean graphsredraw = true;
    boolean dehumidState = false;
+   boolean humidState = false;
 
 //PORTRAIT  CALIBRATION     240 x 400
 //x = map(p.x, LEFT=910, RT=134, 0, 240)
@@ -93,8 +97,11 @@ const int TS_LEFT=104,TS_RT=938,TS_TOP=71,TS_BOT=932;
 void setup() {
     
    pinMode(LED_BUILTIN, OUTPUT);
-   pinMode(23, OUTPUT);
-   digitalWrite(23, true);
+   pinMode(23, OUTPUT); //Dehumidifier
+   digitalWrite(23, false);
+
+   pinMode(25,OUTPUT); //Humidifier
+   digitalWrite(25,false);
    
    uint16_t ID;
    ID = tft.readID();
@@ -109,7 +116,8 @@ void setup() {
    tft.invertDisplay(true);
    tft.setTextSize(2);
    tft.println("If it freezes here, the POWER to the I2C bus is faulty");
-  
+
+  Wire.setWireTimeout(2000);
   //Initialize RTC module 
   if(!rtc.begin()){
     Serial.println("couldnt start clock");
@@ -435,6 +443,10 @@ void clickedSide(int xpos, int ypos){
       settingview();
     }
     if(ypos > 128 && ypos < (128+NUMPADSIZE)){
+      state = "settingsview2";
+      settingview2();
+    }
+    if(ypos > 184 && ypos < (184+NUMPADSIZE)){
       state = "graphview";
       graphview();
     }
@@ -458,16 +470,31 @@ float toggleDehumid (struct sens temphumid, float humidSet, float humidRampStart
   }
   else hs = humidSet;
   if(temphumid.h > (hs + hysteresis) and dehumidState == false){
-    digitalWrite(23, false);
+    digitalWrite(23, true);
     delay(200);
-    digitalWrite(23, true); // pulse relay to simulate button press.
+    digitalWrite(23, false); // pulse relay to simulate button press.
     dehumidState = true;
   }
   if(temphumid.h < (hs - hysteresis) and dehumidState == true){
-    digitalWrite(23, false); 
+    digitalWrite(23, true); 
     delay(200);
-    digitalWrite(23, true);
+    digitalWrite(23, false);
     dehumidState = false;
+  }
+  if(isnan(temphumid.h) and dehumidState == true){
+    digitalWrite(23, true); 
+    delay(200);
+    digitalWrite(23, false);
+    dehumidState = false;
+  }
+
+  if(temphumid.h < (hs - 5*(hysteresis)) and humidState == false){
+    digitalWrite(25,true);
+    humidState = true;
+  }
+  if(temphumid.h > (hs) and humidState == true){
+    digitalWrite(25,false);
+    humidState = false;
   }
   return hs;
 }
@@ -516,6 +543,11 @@ void overview(){
   tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
   tft.setCursor(20, 132);
   tft.setTextSize(2);
+  tft.write(0x23);
+
+  tft.fillRoundRect(10, 184, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 188);
+  tft.setTextSize(2);
   tft.write(0xF7);
 
    // draw info
@@ -556,6 +588,11 @@ void settingview(){
   
   tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
   tft.setCursor(20, 132);
+  tft.setTextSize(2);
+  tft.write(0x23);
+
+  tft.fillRoundRect(10, 184, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 188);
   tft.setTextSize(2);
   tft.write(0xF7);
    
@@ -714,6 +751,11 @@ void graphview(){
   
   tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
   tft.setCursor(20, 132);
+  tft.setTextSize(2);
+  tft.write(0x23);
+
+  tft.fillRoundRect(10, 184, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 188);
   tft.setTextSize(2);
   tft.write(0xF7);
 
