@@ -47,6 +47,7 @@
    boolean graphsredraw = true;
    boolean dehumidState = false;
    boolean humidState = false;
+   boolean tempState = false;
 
 //PORTRAIT  CALIBRATION     240 x 400
 //x = map(p.x, LEFT=910, RT=134, 0, 240)
@@ -102,6 +103,9 @@ void setup() {
 
    pinMode(25,OUTPUT); //Humidifier
    digitalWrite(25,false);
+
+   pinMode(27,OUTPUT); //Temperature controller
+   digitalWrite(27,false);
    
    uint16_t ID;
    ID = tft.readID();
@@ -258,6 +262,26 @@ void loop() {
         }
         displaySettingUpdate(humidSeti, FanSeti, ClockSegment, ClockSeti, ramptime, ramptimei);
     }
+    if(state == "settingsview2"){
+        clickedSide(tsc.xpos, tsc.ypos);
+        clickedSetting2(tsc.xpos, tsc.ypos);
+        if(editingSettingT){
+          String b = clickedNumpad(tsc.xpos, tsc.ypos);
+          if(b == "S"){
+            tempSet = tempSeti;
+            editingSettingT = false;
+          }
+          else if(b == "B"){
+            String h = String(tempSeti);
+            h.remove(h.length()-1);
+            tempSeti = h.toInt();
+          }
+          else{
+            String h = String(tempSeti)+String(b);
+            tempSeti = h.toInt();
+          }
+        }
+    }
     if(state == "graphview"){
         clickedSide(tsc.xpos, tsc.ypos);
     }
@@ -265,7 +289,8 @@ void loop() {
   struct sens temphumid = readSHT31();
   DateTime rtctime = rtc.now();
   float hs = toggleDehumid(temphumid, humidSet, humidRampStart, hysteresis, startRamp, ramptime, rtctime);
-  if(state == "overview") updateValues(rtctime, temphumid, dehumidState, hs);
+  float ts = toggleTemp(temphumid, tempSet);
+  if(state == "overview") updateValues(rtctime, temphumid, dehumidState, hs, tempState, ts);
   if(lastSave.minute() - rtctime.minute() != 0){
     saveData(rtctime, temphumid, dehumidState);
     lastSave = rtctime;
@@ -273,7 +298,7 @@ void loop() {
   delay(300);
 }
 
-void updateValues(DateTime rtctime, struct sens temphumid, boolean dehumidstate, float hs){
+void updateValues(DateTime rtctime, struct sens temphumid, boolean dehumidstate, float hs, boolean tempstate, float ts){
    tft.fillRoundRect(56,16,200,40,10,BLUE);
    tft.setCursor(56,26);
    tft.setTextColor(WHITE);
@@ -298,6 +323,13 @@ void updateValues(DateTime rtctime, struct sens temphumid, boolean dehumidstate,
    tft.setTextColor(WHITE);
    tft.setTextSize(2);
    tft.println(String(hs));
+
+   if(tempstate) tft.fillRoundRect(272,72,80,40,10,GREEN);
+   else tft.fillRoundRect(272,72,80,40,10,RED);
+   tft.setCursor(272,82);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println(String(ts));
 }
 
 struct touchscreenClick clickedTouchPad(){
@@ -432,6 +464,18 @@ void clickedSetting(int xpos, int ypos){
   }
 }
 
+void clickedSetting2(int xpos, int ypos){
+  if(xpos > 56 && xpos < (56+130)){
+    if (ypos > 16 && ypos < (16+40) && !editingSettingT){
+      editingSettingT = true;
+    }
+    else if (ypos > 16 && ypos < (16+40) && editingSettingT){
+      tempSet = tempSeti;
+      editingSettingT = false;
+    }
+  }
+}
+
 void clickedSide(int xpos, int ypos){
   if(xpos > 20 && xpos < (20+NUMPADSIZE)){
     if (ypos > 16 && ypos < (16+NUMPADSIZE)){
@@ -497,6 +541,18 @@ float toggleDehumid (struct sens temphumid, float humidSet, float humidRampStart
     humidState = false;
   }
   return hs;
+}
+
+float toggleTemp(struct sense temphumid, float tempSet){
+  if(temphumid.t > (tempSet + hysteresis) and tempState == false){
+    digitalWrite(27,true);
+    tempState = true;
+  }
+  if(temphumid.t < (tempSet - hysteresis) and tempState == true){
+    digitalWrite(27,false);
+    tempState = false;
+  }
+  return tempSet;
 }
 
 void saveData(DateTime rtctime, struct sens temphumid, boolean dehumidstate){
@@ -649,6 +705,67 @@ void settingview(){
    tft.println("Ramp: " + String(ramptime));
 }
 
+void settingview2(){
+   // draw basic layout
+   tft.fillScreen(GREY);
+   tft.drawFastVLine(200,0, 240, WHITE); // seperation line between the info and control section
+
+  // draw selection buttons
+  tft.fillRoundRect(10, 16, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 20);
+  tft.setTextSize(2);
+  tft.write(0x03);
+  
+  tft.fillRoundRect(10, 72, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20,76);
+  tft.setTextSize(2);
+  tft.write(0x23);
+  
+  tft.fillRoundRect(10, 128, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 132);
+  tft.setTextSize(2);
+  tft.write(0x23);
+
+  tft.fillRoundRect(10, 184, NUMPADSIZE, NUMPADSIZE, 10, GREENBLUE);
+  tft.setCursor(20, 188);
+  tft.setTextSize(2);
+  tft.write(0xF7);
+   
+   // draw buttons for control screen
+   // 40x40 px buttons in a 3x4 grid, 16px to the edge and spacing
+   tft.fillRoundRect(216,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //1
+   tft.fillRoundRect(216,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //4
+   tft.fillRoundRect(216,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //7
+   tft.fillRoundRect(216,184,NUMPADSIZE,NUMPADSIZE,10,GREEN); //set
+   tft.fillRoundRect(272,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //2
+   tft.fillRoundRect(272,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //5
+   tft.fillRoundRect(272,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //8
+   tft.fillRoundRect(272,184,NUMPADSIZE,NUMPADSIZE,10,WHITE); //0
+   tft.fillRoundRect(328,16,NUMPADSIZE,NUMPADSIZE,10,WHITE); //3
+   tft.fillRoundRect(328,72,NUMPADSIZE,NUMPADSIZE,10,WHITE); //6
+   tft.fillRoundRect(328,128,NUMPADSIZE,NUMPADSIZE,10,WHITE); //9
+   tft.fillRoundRect(328,184,NUMPADSIZE,NUMPADSIZE,10,RED); //backspace
+   tft.drawChar(226,20,49,BLACK,0,4); //1
+   tft.drawChar(226,76,52,BLACK,0,4); //4
+   tft.drawChar(226,132,55,BLACK,0,4); //7
+   tft.drawChar(226,188,83,BLACK,0,4); //set
+   tft.drawChar(282,20,50,BLACK,0,4); //2
+   tft.drawChar(282,76,53,BLACK,0,4); //5
+   tft.drawChar(282,132,56,BLACK,0,4); //8
+   tft.drawChar(282,188,48,BLACK,0,4); //0
+   tft.drawChar(338,20,51,BLACK,0,4); //3
+   tft.drawChar(338,76,54,BLACK,0,4); //6
+   tft.drawChar(338,132,57,BLACK,0,4); //9
+   tft.drawChar(338,188,66,BLACK,0,4); //backspace
+
+   // draw settings screen
+   tft.fillRoundRect(56,16,130,40,10,BLUE);
+   tft.setCursor(56,26);
+   tft.setTextColor(WHITE);
+   tft.setTextSize(2);
+   tft.println("Temp: " + String(tempSet));
+}
+
 void displaySettingUpdate(int humidSeti, int FanSeti, int ClockSegment, int ClockSeti, int ramptime, int ramptimei){
   Serial.println(editingSettingC);
   Serial.println(ClockSegment);
@@ -730,6 +847,23 @@ void displaySettingUpdate(int humidSeti, int FanSeti, int ClockSegment, int Cloc
     tft.setTextColor(WHITE);
     tft.setTextSize(2);
     tft.println("Ramp: " + String(ramptimei));
+   }
+}
+
+void displaySettingUpdate2(int tempSeti){
+  if(editingSettingT){
+    tft.fillRoundRect(56,16,130,40,10,GREEN);
+    tft.setCursor(56,26);
+    tft.setTextColor(BLACK);
+    tft.setTextSize(2);
+    tft.println("Temp: " + String(tempSeti));
+   }
+   else{
+    tft.fillRoundRect(56,16,130,40,10,BLUE);
+    tft.setCursor(56,26);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.println("Temp: " + String(tempSeti));
    }
 }
 
